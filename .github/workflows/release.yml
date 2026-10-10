@@ -1,0 +1,51 @@
+name: Release
+
+on:
+  push:
+    tags: ['v[0-9]*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.repository == 'hhh2210/glance'
+    runs-on: macos-26
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Test enrollment feedback
+        run: tools/enrollment_selftest.sh
+      - name: Build and verify tagged version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          tools/package-release.sh --version "$version" --output "$RUNNER_TEMP/release" --derived-data "$RUNNER_TEMP/DerivedData"
+      - name: Publish package and SHA-256 checksum
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          archive="$RUNNER_TEMP/release/Glance-Fork-$version.zip"
+          notes="$RUNNER_TEMP/release-notes.md"
+          cat > "$notes" <<'EOF'
+          Independent Glance Fork for macOS 15 and later, built for Apple silicon and Intel.
+
+          This build is ad-hoc signed and has not been notarized by Apple. macOS Gatekeeper may block the downloaded app. No Developer ID signing certificate is used, and the package does not disable Gatekeeper or remove quarantine attributes.
+
+          Download the ZIP and its `.sha256` file together. Verify with `shasum -a 256 -c Glance-Fork-VERSION.zip.sha256`, substituting this release's version.
+
+          This fork receives updates through its own GitHub releases and Homebrew cask; upstream Sparkle updates are disabled.
+          EOF
+          gh release create "$GITHUB_REF_NAME" "$archive" "$archive.sha256" \
+            --repo "$GITHUB_REPOSITORY" --verify-tag \
+            --title "Glance Fork $version" --notes-file "$notes"

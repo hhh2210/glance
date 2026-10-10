@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 30
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Test enrollment feedback
+        run: tools/enrollment_selftest.sh
+      - name: Build and package both architectures without Developer ID
+        run: tools/package-release.sh --output "$RUNNER_TEMP/release" --derived-data "$RUNNER_TEMP/DerivedData"
+      - name: Upload verified package
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Glance-Fork
+          path: ${{ runner.temp }}/release/Glance-Fork-*.zip*
+          if-no-files-found: error
+          retention-days: 7
