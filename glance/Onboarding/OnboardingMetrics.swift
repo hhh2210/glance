@@ -37,8 +37,8 @@ enum OnboardingMetrics {
     static let pillPreSetupHeight: CGFloat = 220
     static let notchSelectCameraHeight: CGFloat = 228
     static let pillSelectCameraHeight: CGFloat = 228
-    static let notchEnrollHeight: CGFloat = 344
-    static let pillEnrollHeight: CGFloat = 350
+    static let notchEnrollHeight: CGFloat = 410
+    static let pillEnrollHeight: CGFloat = 400
     static let notchNameHeight: CGFloat = 230
     static let pillNameHeight: CGFloat = 230
     static let notchPasswordHeight: CGFloat = 260
@@ -160,10 +160,6 @@ enum OnboardingMetrics {
     /// 10 ticks per 45deg sector x 8 sectors = 80 ticks tiling the ring.
     static let tickCount = 80
     static let ticksPerSector = 10
-    /// Width of the live turn indicator, in ticks — under a sector's 10 so it reads as a pointer.
-    static let turnIndicatorTickSpan = 6
-    /// Indicator stretch at full intensity — short of `tickLengthLit` so it never reads as captured.
-    static let turnIndicatorLengthBoost: CGFloat = 5
     static let tickLengthUnlit: CGFloat = 12
     static let tickLengthLit: CGFloat = 20
     static let tickWidth: CGFloat = 2.4

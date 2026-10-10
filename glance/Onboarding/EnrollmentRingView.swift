@@ -3,8 +3,8 @@
 //  glance
 //
 //  80 ticks tile the circle in 45deg sectors that light up once captured; center has no
-//  sector of its own and pulses every tick instead (see `centerPulseTick`). A short band
-//  also tracks where the head is currently turned.
+//  sector of its own and pulses every tick instead (see `centerPulseTick`).
+//  The inner ring shows the real hold independently of captured directions.
 //
 
 import SwiftUI
@@ -19,16 +19,13 @@ struct EnrollmentRingView: View {
     private var isComplete: Bool { controller.enrollmentComplete }
 
     var body: some View {
-        let turn = controller.headTurn
         ZStack {
             ForEach(0..<OnboardingMetrics.tickCount, id: \.self) { index in
-                let intensity = turnIntensity(for: index, turn: turn)
-                let length = length(for: index, intensity: intensity)
                 Capsule()
-                    .fill(color(for: index, intensity: intensity))
-                    .frame(width: width(for: index), height: length)
+                    .fill(isLit(index) || isComplete ? GlanceTheme.accent : .white)
+                    .frame(width: width(for: index), height: length(for: index))
                     // Inner tip anchored at the ring radius; growing `length` extends outward, not inward.
-                    .offset(y: -(radius + length / 2))
+                    .offset(y: -(radius + length(for: index) / 2))
                     .rotationEffect(.degrees(angle(for: index)))
                     .opacity(isComplete ? 0 : 1)
                     .animation(
@@ -36,12 +33,19 @@ struct EnrollmentRingView: View {
                         value: isLit(index)
                     )
                     .animation(.easeOut(duration: 0.22), value: pulseActive)
-                    // Undelayed — tracks a live head, so it has to keep up.
-                    .animation(.easeOut(duration: 0.15), value: intensity)
                     .animation(
                         .easeInOut(duration: 0.45).delay(Double(index) * 0.004),
                         value: isComplete
                     )
+            }
+
+            if controller.enrollmentCapture.phase == .holding || controller.enrollmentCapture.phase == .capturing {
+                EnrollmentHoldRing(
+                    progress: controller.enrollmentCapture.holdProgress,
+                    isCapturing: controller.enrollmentCapture.phase == .capturing,
+                    diameter: (OnboardingMetrics.cameraCircleDiameter + diameter) / 2,
+                    tint: GlanceTheme.accent
+                )
             }
 
             // Sized to sit just inside the lit ticks' outer tips, so the ring reads a hair
@@ -80,32 +84,12 @@ struct EnrollmentRingView: View {
         return controller.capturedPoses.contains(pose)
     }
 
-    private func length(for index: Int, intensity: Double) -> CGFloat {
-        if isLit(index) || pulseActive { return OnboardingMetrics.tickLengthLit }
-        return OnboardingMetrics.tickLengthUnlit + OnboardingMetrics.turnIndicatorLengthBoost * intensity
+    private func length(for index: Int) -> CGFloat {
+        isLit(index) || pulseActive ? OnboardingMetrics.tickLengthLit : OnboardingMetrics.tickLengthUnlit
     }
 
     private func width(for index: Int) -> CGFloat {
         isComplete ? OnboardingMetrics.tickWidthComplete : OnboardingMetrics.tickWidth
-    }
-
-    private func color(for index: Int, intensity: Double) -> Color {
-        if isLit(index) || isComplete { return GlanceTheme.accent }
-        return GlanceTheme.whiteToAccent(intensity)
-    }
-
-    /// Drives a tick's colour and length: peaks where the turn points, fading out half a
-    /// span to either side. Tracks the real angle, not the 45deg sectors.
-    private func turnIntensity(for index: Int, turn: OnboardingController.HeadTurn?) -> Double {
-        guard let turn, !isComplete, !isLit(index) else { return 0 }
-
-        var delta = abs(angle(for: index) - turn.angle)
-        if delta > 180 { delta = 360 - delta }
-
-        let degreesPerTick = 360.0 / Double(OnboardingMetrics.tickCount)
-        let halfSpan = Double(OnboardingMetrics.turnIndicatorTickSpan) / 2
-        let falloff = max(0, 1 - (delta / degreesPerTick) / halfSpan)
-        return turn.progress * falloff
     }
 
     private func triggerPulse() {

@@ -127,13 +127,13 @@ private struct EnrollmentSweepOverlay: View {
 
     var body: some View {
         // Read observable fields in `body` so the hosting view actually subscribes to changes.
-        let pose = host.controller.currentPose
+        let pose = host.controller.turnGuidance
         let presented = host.isPresented
         let guiding = host.controller.guideVisible
         let tooFar = host.controller.isTooFar
         let checkmark = host.controller.showCheckmark
-        let direction = pose.flatMap(EnrollmentSweepDirection.init(pose:))
-        let canPlay = presented && guiding && !tooFar && !checkmark
+        let direction: EnrollmentSweepDirection? = if let pose { EnrollmentSweepDirection(pose: pose) } else { nil }
+        let canPlay = presented && guiding && !tooFar && !checkmark && direction != nil
         let isVisible = canPlay && playingDirection != nil
 
         ZStack {
