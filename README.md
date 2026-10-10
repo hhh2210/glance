@@ -1,8 +1,8 @@
 <h1 align="center">
   <br>
-  <a href="https://tryglance.app"><img src="glance/Assets.xcassets/appicon.imageset/appicon.png" alt="Glance" width="150"></a>
+  <a href="https://github.com/hhh2210/glance"><img src="glance/Assets.xcassets/appicon.imageset/appicon.png" alt="Glance Fork" width="150"></a>
   <br>
-  Glance
+  Glance Fork
   <br>
 </h1>
 
@@ -14,7 +14,9 @@
   <img src="https://img.shields.io/badge/Swift-SwiftUI-black.svg" alt="Swift">
 </p>
 
-Glance brings the FaceID-like experience of your iPhone to a Mac near you. Unlock your Mac with a glance — no typing, no reaching for the TouchID key. Everything runs on-device using Apple's Vision
+An independently maintained fork of [jonnyoo/glance](https://github.com/jonnyoo/glance), with explicit enrollment feedback and Homebrew installation. The original project and its author are not responsible for this fork's releases.
+
+Unlock your Mac with a glance — no typing, no reaching for the TouchID key. Everything runs on-device using Apple's Vision
 and Core ML frameworks, so your face data and your Mac password never touch the internet. The UI is built into your Macbook's notch with fluid dynamic island like animations.
 
 
@@ -43,9 +45,35 @@ https://github.com/user-attachments/assets/77438826-80a9-4ab2-9fc3-42407a2d0adb
 - macOS 15 Sequoia or later
 - Apple Silicon or Intel Mac
 
-<a href="https://github.com/jonnyoo/glance/releases/latest/download/Glance.dmg" target="_self"><img width="200" src="https://github.com/user-attachments/assets/cdb8af97-1ee2-4669-b7cb-dcfb56c9dd61" alt="Download for Mac" /></a>
+```sh
+brew install --cask hhh2210/tap/glance-face-unlock
+```
 
-Open the `.dmg` file and drag Glance to `/Applications`, then open it.
+To update:
+
+```sh
+brew update
+brew upgrade --cask hhh2210/tap/glance-face-unlock
+```
+
+Or download `Glance-Fork-<version>.zip` from [this fork's releases](https://github.com/hhh2210/glance/releases/latest), extract it, and move `Glance Fork.app` to `/Applications`.
+
+**Distribution status:** these builds are ad-hoc signed, not Developer ID signed or notarized by Apple. macOS may block the first launch; use its per-app **Open Anyway** approval in System Settings → Privacy & Security if you choose to run the fork. Do not disable Gatekeeper. An update may require granting Accessibility again.
+
+The fork uses its own app name, bundle identifier, preferences, Keychain service, and encrypted face store. It does not import or overwrite upstream Glance's enrollment or credentials. Quit the original app before using the fork, then enroll and grant Camera and Accessibility permissions to **Glance Fork**. Enter your Mac password only in the app's own setup screen.
+
+Updates come from Homebrew or the fork's GitHub Releases. The upstream automatic updater is not included.
+
+## Guided enrollment
+
+Enrollment captures the center pose and eight directions. For each direction:
+
+1. Follow the remaining adjustment, such as **Raise your chin slightly** once your left turn is sufficient.
+2. When all capture conditions pass, **Hold still** while the hold ring fills over 0.5 seconds.
+3. Keep still during **Capturing**. The hold timer finishing does not mean the samples have been captured yet.
+4. Move to the next direction only after capture completes.
+
+If your pose or capture quality stops qualifying, the app explains the blocker and restarts the hold after it recovers. Previously collected samples and completed directions are retained. Enrollment feedback does not change the face-match threshold or the unlock liveness checks.
 
 
 ## Permissions
@@ -150,23 +178,43 @@ debug section should appear in the sidebar.
 
 1. Clone repository:
   ```bash
-   git clone https://github.com/jonnyoo/glance.git
+   git clone https://github.com/hhh2210/glance.git
    cd glance
   ```
-2. Open in Xcode:
-  ```bash
-   open glance.xcodeproj
-  ```
-3. Run the project:
-  - Click `run` or press `Cmd + R`.
+2. Build without launching the app:
+   ```sh
+   ./script/build_and_run.sh --build-only
+   ```
+3. Run the development build:
+   ```sh
+   ./script/build_and_run.sh
+   ```
+
+The Xcode scheme is `glance`; the app product is `Glance Fork.app`. Local builds use ad-hoc signing and do not require the upstream developer's signing team. The run script stops only the fork's process.
+
+Run the enrollment regression checks without a camera, password, or enrolled identity:
+
+```sh
+./tools/enrollment_selftest.sh
+```
+
+The checks compile the same capture evaluator used by the app. They cover pose boundaries, hold timing, interrupted capture, and sample completion. They do not establish real-camera usability or spoof resistance.
+
+To create a universal release ZIP and its SHA-256 file:
+
+```sh
+./tools/package-release.sh --version 1.2.1
+```
+
+See [release maintenance](docs/releasing.md) for the tag workflow and Homebrew update process.
 
 
 
 ## Contributing
 
-Not currently accepting PRs. Feel free to fork this project.
+Issues and focused pull requests for this fork are welcome at [hhh2210/glance](https://github.com/hhh2210/glance). Include reproduction steps and relevant test or build results. For enrollment changes, distinguish state-machine tests from real-camera testing, and keep authentication/security changes separate from UI feedback.
 
-App feedback goes to [tryglance.app/feedback](https://tryglance.app/feedback).
+The original project's contribution policy applies to its own repository; do not send fork-specific bugs to its author.
 
 ## Acknowledgements
 

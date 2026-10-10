@@ -7,7 +7,6 @@ import SwiftUI
 import AppKit
 
 struct AboutSettingsPage: View {
-    @Bindable var updater: UpdaterController
     let environment: AppEnvironment
 
     /// Secret-tap state for revealing the Debug/Face Lab sidebar section —
@@ -35,7 +34,7 @@ struct AboutSettingsPage: View {
                 .contentShape(Rectangle())
                 .onTapGesture(perform: handleIconTap)
 
-            Text("Glance")
+            Text("Glance Fork")
                 .font(.system(size: 22, weight: .semibold))
                 .foregroundStyle(SettingsMetrics.textPrimary)
 
@@ -48,17 +47,18 @@ struct AboutSettingsPage: View {
 
         SettingsGroup {
             SettingsActionRowContent(
-                title: "Check for Updates",
-                buttonTitle: "Check",
-                isEnabled: updater.canCheckForUpdates
+                title: "Latest Release",
+                buttonTitle: "View"
             ) {
-                updater.checkForUpdates()
+                if let url = URL(string: "https://github.com/hhh2210/glance/releases/latest") {
+                    NSWorkspace.shared.open(url)
+                }
             }
 
             SettingsGroupDivider()
 
-            SettingsRowContent(title: "Automatically check for updates") {
-                GlanceToggle(isOn: $updater.automaticallyChecksForUpdates)
+            SettingsRowContent(title: "Updates", subtitle: "Install new versions with Homebrew or from GitHub Releases.") {
+                EmptyView()
             }
 
             SettingsGroupDivider()
@@ -67,7 +67,7 @@ struct AboutSettingsPage: View {
                 title: "Send Feedback",
                 buttonTitle: "Send"
             ) {
-                if let url = URL(string: "https://tryglance.app/feedback") {
+                if let url = URL(string: "https://github.com/hhh2210/glance/issues") {
                     NSWorkspace.shared.open(url)
                 }
             }
