@@ -314,25 +314,23 @@ struct EnrollStepView: View {
     }
 
     private var instructionLabel: some View {
-        Text(controller.enrollmentInstruction)
-            .font(GlanceTheme.Font.instruction)
-            .foregroundStyle(.white)
-            .multilineTextAlignment(.center)
-            .lineLimit(2)
-            .minimumScaleFactor(0.8)
-            .id(controller.enrollmentInstruction)
-            .transition(.opacity)
-            .animation(.easeInOut(duration: 0.2), value: controller.enrollmentInstruction)
-            .opacity(controller.guideVisible ? 1 : 0)
-            .animation(
-                .easeInOut(
-                    duration: controller.guideVisible
-                        ? OnboardingMetrics.enrollInstructionFadeIn
-                        : OnboardingMetrics.enrollInstructionFadeOut
-                ),
-                value: controller.guideVisible
-            )
+        EnrollmentFeedbackView(
+            phase: controller.enrollmentCapture.phase,
+            pose: controller.currentPose,
+            completedDirections: controller.currentPoseIndex,
+            capturedSamples: controller.capturedForCurrentPose
+        )
+        .opacity(controller.guideVisible ? 1 : 0)
+        .animation(
+            .easeInOut(
+                duration: controller.guideVisible
+                    ? OnboardingMetrics.enrollInstructionFadeIn
+                    : OnboardingMetrics.enrollInstructionFadeOut
+            ),
+            value: controller.guideVisible
+        )
     }
+
 }
 
 private struct EnrollmentCloseButton: View {
