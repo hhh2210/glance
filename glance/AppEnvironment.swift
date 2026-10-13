@@ -13,6 +13,7 @@ import Observation
 final class AppEnvironment {
     let pocController = POCController()
     let faceUnlockCoordinator: FaceUnlockCoordinator
+    let autoFillApprovalCoordinator: AutoFillApprovalCoordinator
     /// Held, not just constructed — owns a repeating timer that would silently stop enforcing auto-lock if deallocated.
     let sessionAutoLocker: SessionAutoLocker
 
@@ -21,6 +22,7 @@ final class AppEnvironment {
 
     init() {
         faceUnlockCoordinator = FaceUnlockCoordinator(pocController: pocController)
+        autoFillApprovalCoordinator = AutoFillApprovalCoordinator(scanner: faceUnlockCoordinator.scanner)
         sessionAutoLocker = SessionAutoLocker(pocController: pocController)
     }
 }

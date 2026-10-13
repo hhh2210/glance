@@ -102,6 +102,7 @@ final class GlanceSettings {
 
     private enum Key {
         static let isFaceUnlockEnabled = "GlanceSettings.isFaceUnlockEnabled"
+        static let isAutoFillApprovalEnabled = "GlanceSettings.isAutoFillApprovalEnabled"
         static let matchThreshold = "GlanceSettings.matchThreshold"
         static let livenessChecksEnabled = "GlanceSettings.livenessChecksEnabled"
         static let livenessMode = "GlanceSettings.livenessMode"
@@ -134,6 +135,10 @@ final class GlanceSettings {
 
     var isFaceUnlockEnabled: Bool {
         didSet { defaults.set(isFaceUnlockEnabled, forKey: Key.isFaceUnlockEnabled) }
+    }
+    /// Experimental until the native AutoFill AX delivery path is verified.
+    var isAutoFillApprovalEnabled: Bool {
+        didSet { defaults.set(isAutoFillApprovalEnabled, forKey: Key.isAutoFillApprovalEnabled) }
     }
     var matchThreshold: Float {
         didSet { defaults.set(matchThreshold, forKey: Key.matchThreshold) }
@@ -286,6 +291,7 @@ final class GlanceSettings {
         // Enabled by default — onboarding already enrolled a face and set a
         // password specifically to use Face Unlock.
         isFaceUnlockEnabled = defaults.object(forKey: Key.isFaceUnlockEnabled) as? Bool ?? true
+        isAutoFillApprovalEnabled = defaults.object(forKey: Key.isAutoFillApprovalEnabled) as? Bool ?? false
         // Matches `MatchConfidenceLevel.standard` — see RecognitionSettingsPage.swift.
         matchThreshold = defaults.object(forKey: Key.matchThreshold) as? Float ?? 0.66
         livenessChecksEnabled = defaults.object(forKey: Key.livenessChecksEnabled) as? Bool ?? true

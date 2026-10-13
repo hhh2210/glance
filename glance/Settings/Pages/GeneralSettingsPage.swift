@@ -132,6 +132,16 @@ struct GeneralSettingsPage: View {
             }
 
             VStack(alignment: .leading, spacing: 8) {
+                SettingsSectionTitle(text: "AutoFill")
+                SettingsGroup {
+                    SettingsRowContent(title: "Approve AutoFill with your face") {
+                        GlanceToggle(isOn: $settings.isAutoFillApprovalEnabled)
+                    }
+                }
+                SettingsCaption(text: "Experimental. Close Settings to watch for supported Apple AutoFill prompts that ask for your Mac password. After face verification, you have one second to cancel. Requires liveness checks and an unlocked Glance session. If unavailable, use the system prompt.")
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
                 SettingsSectionTitle(text: "Behaviour")
                 SettingsGroup {
                     SettingsRowContent(title: "Retry on notch hover") {

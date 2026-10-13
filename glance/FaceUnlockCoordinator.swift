@@ -16,8 +16,9 @@ import Observation
 final class FaceUnlockCoordinator {
     private let pocController: POCController
     let lockMonitor = LockMonitor()
-    let camera = CameraManager()
-    let pipeline = FaceRecognitionPipeline()
+    let scanner: FaceVerificationScanner
+    var camera: CameraManager { scanner.camera }
+    var pipeline: FaceRecognitionPipeline { scanner.pipeline }
 
     /// Persisted via GlanceSettings. Setting to false cancels any in-flight scan and disarms the overlay immediately.
     var isEnabled: Bool {
@@ -35,11 +36,6 @@ final class FaceUnlockCoordinator {
     private var scanWindowDuration: TimeInterval {
         TimeInterval(GlanceSettings.shared.faceDetectionSeconds)
     }
-    /// A wake often catches the owner while they are still looking away from
-    /// the camera. Require a sustained non-match rather than a few early
-    /// frames before giving the failure animation.
-    private let wrongFaceGraceDuration: Duration = .seconds(2)
-
     private(set) var statusMessage = "Idle"
     private(set) var lastOutcome: String?
 
@@ -47,6 +43,7 @@ final class FaceUnlockCoordinator {
     /// One-shot per lock session — an auto-retry that could itself auto-retry would loop the camera for the whole lock session.
     private var hasAutoRetriedForCurrentLock = false
     private var scanTask: Task<Void, Never>?
+    private var scanRequestID: UUID?
     /// Bumped by every `startScanCycle()`; a cycle bails once superseded (see `runScanCycle(generation:)`).
     private var scanGeneration = 0
     /// When the last scan cycle was armed — collapses a single wake into a single arm (see `.wake` branch of `evaluateTrigger`).
@@ -64,8 +61,9 @@ final class FaceUnlockCoordinator {
     /// Reads the space key on the lock screen for the "On space" trigger; only runs while locked + opted in.
     private let spaceKeyMonitor = SpaceKeyMonitor()
 
-    init(pocController: POCController) {
+    init(pocController: POCController, scanner: FaceVerificationScanner? = nil) {
         self.pocController = pocController
+        self.scanner = scanner ?? FaceVerificationScanner()
         self.isEnabled = GlanceSettings.shared.isFaceUnlockEnabled
         self.matchThreshold = GlanceSettings.shared.matchThreshold
         spaceKeyMonitor.onSpaceKeyDown = { [weak self] in self?.handleSpaceKeyPress() }
@@ -160,7 +158,8 @@ final class FaceUnlockCoordinator {
         scanGeneration &+= 1
         autoRetryTask?.cancel()
         autoRetryTask = nil
-        camera.stop()
+        if let scanRequestID { scanner.cancel(requestID: scanRequestID) }
+        scanRequestID = nil
         NotchOverlayController.shared.disarm()
         // Covers isEnabled being switched off directly, keeping "disarmed" and "not listening for space" in lockstep.
         spaceKeyMonitor.stop()
@@ -224,10 +223,13 @@ final class FaceUnlockCoordinator {
     /// Called on arm, and again whenever the overlay hover-activates.
     private func startScanCycle() {
         scanTask?.cancel()
+        if let scanRequestID { scanner.cancel(requestID: scanRequestID) }
         scanGeneration &+= 1
         let generation = scanGeneration
+        let requestID = UUID()
+        scanRequestID = requestID
         scanTask = Task { [weak self] in
-            await self?.runScanCycle(generation: generation)
+            await self?.runScanCycle(generation: generation, requestID: requestID)
         }
     }
 
@@ -235,37 +237,44 @@ final class FaceUnlockCoordinator {
     /// end of this function, and its global side effects (`camera.stop()` etc.) could otherwise land on the newer cycle instead
     /// of itself. This was a real bug — a superseded `camera.stop()` queued behind the newer cycle's `startRunning()` made the
     /// camera visibly switch on then die mid-warm-up, leaving the surviving cycle polling a dead session and never unlocking.
-    private func runScanCycle(generation: Int) async {
-        guard LockMonitor.isScreenActuallyLocked() else { return }
-
-        await camera.start()
-        guard generation == scanGeneration else { return }
-
-        if let error = camera.errorMessage {
-            statusMessage = error
-            camera.stop()
-            return
+    private func runScanCycle(generation: Int, requestID: UUID) async {
+        guard !Task.isCancelled, generation == scanGeneration,
+              LockMonitor.isScreenActuallyLocked() else { return }
+        defer {
+            if scanRequestID == requestID { scanRequestID = nil }
         }
-
         let showsUI = self.showsUI
-        if showsUI {
-            NotchOverlayController.shared.beginScanning()
-        }
-        statusMessage = "Looking for your face…"
-
-        let outcome = await observeScanWindow(
-            deadline: Date().addingTimeInterval(scanWindowDuration),
-            requireOverlayScanning: showsUI
+        var hasStarted = false
+        let outcome = await scanner.scan(
+            requestID: requestID,
+            timeout: scanWindowDuration,
+            thresholdProvider: { self.matchThreshold },
+            shouldContinue: {
+                generation == self.scanGeneration && self.isEnabled
+                    && LockMonitor.isScreenActuallyLocked()
+                    && SecureCredentialManager.isSessionUnlocked
+                    && (!showsUI || !hasStarted || NotchOverlayController.shared.phase == .scanning)
+            },
+            onStarted: {
+                hasStarted = true
+                if showsUI { NotchOverlayController.shared.beginScanning() }
+                self.statusMessage = "Looking for your face…"
+            }
         )
 
         // A newer cycle now owns the camera and overlay — leave both alone, and leave the auto-retry one-shot unspent.
-        guard generation == scanGeneration else { return }
-
-        camera.stop()
+        guard !Task.isCancelled, generation == scanGeneration else { return }
 
         switch outcome {
-        case .matched:
-            // The unlock already happened inside observeScanWindow — this only decides whether anything is shown about it.
+        case .verified(let verification):
+            guard isEnabled, LockMonitor.isScreenActuallyLocked(),
+                  SecureCredentialManager.isSessionUnlocked,
+                  SecureCredentialManager.hasStoredPassword() else { return }
+            statusMessage = "Recognized — unlocking…"
+            let match = verification.match
+            lastOutcome = "Matched \(match.identity.name) at \(String(format: "%.3f", match.centroidSimilarity)), \(verification.livenessNote)."
+            await pocController.injectStoredPassword(requireAuthoritativeLock: true)
+            guard !Task.isCancelled, generation == scanGeneration else { return }
             if showsUI {
                 NotchOverlayController.shared.finish(success: true)
             }
@@ -278,7 +287,8 @@ final class FaceUnlockCoordinator {
             } else {
                 scheduleAutoRetryIfEnabled(after: headlessRetryDelay)
             }
-        case .spoofSuspected:
+        case .spoofSuspected(let reason):
+            lastOutcome = reason
             statusMessage = "Couldn't confirm a live face."
             if showsUI {
                 NotchOverlayController.shared.finish(success: false)
@@ -295,6 +305,17 @@ final class FaceUnlockCoordinator {
                 scheduleAutoRetryIfEnabled(after: NotchOverlayController.shared.collapseAnimationDuration)
             } else {
                 scheduleAutoRetryIfEnabled(after: headlessRetryDelay)
+            }
+        case .unavailable(let message):
+            statusMessage = message
+        case .cancelled:
+            // The overlay timeout used to end the scan through its loop guard.
+            // Preserve its one-shot retry without retrying a superseded request.
+            if isEnabled, LockMonitor.isScreenActuallyLocked(),
+               SecureCredentialManager.isSessionUnlocked, showsUI,
+               NotchOverlayController.shared.phase != .scanning {
+                statusMessage = "No face detected — hover the notch to try again."
+                scheduleAutoRetryIfEnabled(after: NotchOverlayController.shared.collapseAnimationDuration)
             }
         }
     }
@@ -314,110 +335,5 @@ final class FaceUnlockCoordinator {
             }
             self.startScanCycle()
         }
-    }
-
-    private enum ScanOutcome {
-        case matched
-        case consistentlyWrongFace
-        /// A deny cue (glare, device rectangle) fired — actively rejected as a spoof regardless of match. Same failure path as `.consistentlyWrongFace`.
-        case spoofSuspected
-        case noResolution
-    }
-
-    /// Recognition and liveness run concurrently and each latches when it succeeds, so unlock fires the moment the second lands;
-    /// liveness never fails the scan by staying undecided, it just keeps scanning until `deadline`.
-    /// `requireOverlayScanning` bails early once the overlay's own timeout collapses the UI — only applied when there is an
-    /// overlay, since headlessly `phase` never becomes `.scanning` at all.
-    private func observeScanWindow(deadline: Date, requireOverlayScanning: Bool) async -> ScanOutcome {
-        let livenessEnabled = GlanceSettings.shared.livenessChecksEnabled
-        let liveness = LivenessAnalyzer()
-        liveness.modeProvider = { GlanceSettings.shared.livenessMode }
-        /// Set by the first consecutive non-match. A gap in face detection or
-        /// a valid match clears it, so only a sustained wrong face resolves the scan.
-        var wrongFaceStartedAt: ContinuousClock.Instant?
-
-        /// Cleared the moment a detected face fails to match, so a latched match can't be handed to whoever steps in next.
-        var readyMatch: ScoredIdentity?
-        /// Turning liveness off in Settings makes this half permanently ready.
-        var livenessConfirmed = !livenessEnabled
-        /// Last frame's selected face, passed back so `selectDominantFace` stays on the same person instead of flip-flopping.
-        var lastFaceBoundingBox: CGRect?
-        /// Cheap way to detect "no new camera frame yet" vs. "fresh frame" — without it a repeat frame would corrupt the liveness motion signal.
-        var lastProcessedFrameID: UInt64?
-
-        while Date() < deadline, !Task.isCancelled,
-              !requireOverlayScanning || NotchOverlayController.shared.phase == .scanning {
-            guard LockMonitor.isScreenActuallyLocked() else { return .noResolution }
-
-            guard let frame = camera.currentFrame, frame.id != lastProcessedFrameID else {
-                // 20ms keeps the liveness window's sample count high while staying close to the camera's native ~33ms cadence.
-                try? await Task.sleep(nanoseconds: 20_000_000)
-                continue
-            }
-            lastProcessedFrameID = frame.id
-
-            let pipeline = self.pipeline
-            let previousBoundingBox = lastFaceBoundingBox
-            let outcome = await Task.detached(priority: .userInitiated) { () -> (FaceRecognitionResult, LivenessFrame)? in
-                guard let result = try? pipeline.recognize(in: frame.image, preferNear: previousBoundingBox) else { return nil }
-                let faceCrop = CameraManager.renderCrop(from: frame, imageRect: result.face.boundingBox)
-                return (result, LivenessFeatureExtractor.extract(from: result, frame: frame.image, faceCrop: faceCrop))
-            }.value
-
-            guard let (result, livenessFrame) = outcome else {
-                wrongFaceStartedAt = nil
-                lastFaceBoundingBox = nil
-                try? await Task.sleep(nanoseconds: 20_000_000)
-                continue
-            }
-            lastFaceBoundingBox = result.face.normalizedBoundingBox
-
-            // Fed regardless of match, so liveness stays a genuinely independent gate rather than one starved by recognition confidence.
-            var confirmingCue: LivenessCue?
-            if livenessEnabled {
-                let snapshot = liveness.observe(livenessFrame)
-                switch snapshot.decision {
-                case .denied:
-                    // Overrides everything, including a match and any confirmation that already happened.
-                    lastOutcome = snapshot.decision.denialReason
-                    return .spoofSuspected
-                case .confirmed(let cue):
-                    livenessConfirmed = true
-                    confirmingCue = cue
-                case .pending:
-                    break
-                }
-            }
-
-            // `activeIdentities`, not `identities`: someone switched off on the Your Face page stays enrolled but must not unlock.
-            let scored = pipeline.score(result.embedding, against: FaceEnrollmentStore.shared.activeIdentities)
-            let matched = pipeline.bestMatch(in: scored, threshold: matchThreshold)
-
-            if let matched {
-                wrongFaceStartedAt = nil
-                readyMatch = matched
-            } else {
-                readyMatch = nil
-                if wrongFaceStartedAt == nil {
-                    wrongFaceStartedAt = .now
-                }
-                if ContinuousClock.now - wrongFaceStartedAt! >= wrongFaceGraceDuration {
-                    return .consistentlyWrongFace
-                }
-            }
-
-            if let readyMatch, livenessConfirmed {
-                statusMessage = "Recognized — unlocking…"
-                let livenessNote = livenessEnabled
-                    ? (confirmingCue.map { "live via \($0.title)" } ?? "liveness clear")
-                    : "liveness off"
-                lastOutcome = "Matched \(readyMatch.identity.name) at \(String(format: "%.3f", readyMatch.centroidSimilarity)), \(livenessNote)."
-                await pocController.injectStoredPassword(requireAuthoritativeLock: true)
-                return .matched
-            }
-
-            try? await Task.sleep(nanoseconds: 20_000_000)
-        }
-        return .noResolution
     }
 }
