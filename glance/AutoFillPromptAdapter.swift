@@ -39,14 +39,14 @@ final class AutoFillPromptAdapter {
 
     func discover() -> Target? {
         guard AXIsProcessTrusted(), Self.isSessionUnlocked else { return nil }
-        let candidates = owners.flatMap { bundle in
+        let eligibleTargets = owners.flatMap { bundle in
             NSRunningApplication.runningApplications(withBundleIdentifier: bundle).flatMap { app -> [Target] in
                 guard hasVisibleWindow(pid: app.processIdentifier), isTrustedOwner(app) else { return [] }
                 return candidates(in: app, expectedCharacters: 0)
             }
         }
         // Never choose the first of multiple eligible fields.
-        return candidates.count == 1 ? candidates[0] : nil
+        return eligibleTargets.count == 1 ? eligibleTargets[0] : nil
     }
 
     func stillExists(_ target: Target) -> Bool {
