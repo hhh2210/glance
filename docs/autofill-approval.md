@@ -80,6 +80,23 @@ Build success, a valid ad-hoc signature, and policy tests do not establish this
 runtime capability. Reusing the upstream bundle ID or settings path does not grant
 access to its team's existing session key or decrypt its enrolled-face store.
 
+For a local development build, sign in under **Xcode → Settings → Apple Accounts**.
+A free Personal Team supports macOS Keychain Sharing. Then build with your Team ID:
+
+```sh
+GLANCE_DEVELOPMENT_TEAM=YOURTEAMID script/build_and_run.sh --build-only
+```
+
+This path uses Apple Development automatic signing and the separate
+`script/development.entitlements`, with Xcode managing the team prefix and profile.
+The script refuses to launch an ad-hoc build without a development team. Do not run
+the development-signed app through `tools/package-release.sh`, which deliberately
+creates an ad-hoc CI archive. Verify protected Keychain initialization separately
+after signing. Free Personal Team profiles expire and require periodic rebuilding.
+
+Apple references: [supported macOS capabilities](https://developer.apple.com/help/account/reference/supported-capabilities-macos/),
+[Personal Team provisioning](https://developer.apple.com/help/account/basics/about-your-developer-account).
+
 ## API evidence
 
 Apple documents the Mac-password AutoFill fallback in its
