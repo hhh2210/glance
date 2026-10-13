@@ -25,12 +25,13 @@ final class AutoFillPromptAdapter {
     }
 
     enum DeliveryError: LocalizedError {
-        case targetChanged, unsupportedField, submissionFailed
+        case targetChanged, unsupportedField, submissionFailed, cleanupFailed
         var errorDescription: String? {
             switch self {
             case .targetChanged: return "AutoFill request changed. Use the system prompt."
             case .unsupportedField: return "This password field does not support direct filling."
             case .submissionFailed: return "AutoFill could not be submitted. Use the system prompt."
+            case .cleanupFailed: return "Could not confirm the password field was cleared. Clear it or cancel the system prompt."
             }
         }
     }
@@ -73,30 +74,59 @@ final class AutoFillPromptAdapter {
     /// Called only after face verification and the cancellable countdown. AX writes
     /// address the retained secure field directly, so a focus race cannot type into
     /// another app. Unsupported AX controls fail without a CGEvent fallback.
-    func submit(_ bytes: Data, to target: Target, mayProceed: () -> Bool) throws {
-        guard mayProceed(), isCurrent(target),
-              let text = String(data: bytes, encoding: .utf8), !text.isEmpty else {
-            throw DeliveryError.targetChanged
-        }
-        AXUIElementSetMessagingTimeout(target.field, 0.05)
-        AXUIElementSetMessagingTimeout(target.submit, 0.05)
-        guard AXUIElementSetAttributeValue(target.field, kAXValueAttribute as CFString, text as CFString) == .success else {
-            throw DeliveryError.unsupportedField
-        }
-        guard mayProceed(), isCurrent(target, expectedCharacters: text.utf16.count) else {
-            // No submit when the field, request, session, or focus changed.
-            // Clear only our exact retained field; never type elsewhere to undo it.
-            if isCurrent(target, expectedCharacters: text.utf16.count) {
-                _ = AXUIElementSetAttributeValue(target.field, kAXValueAttribute as CFString, "" as CFString)
+    @discardableResult
+    func submit(_ bytes: Data, to target: Target, mayProceed: () -> Bool) throws -> AutoFillPasswordDelivery.Outcome {
+        do {
+            return try AutoFillPasswordDelivery.submit(bytes, mayProceed: mayProceed, operations: .init(
+                isEligible: { self.isCurrent(target, expectedCharacters: $0) },
+                write: { text in
+                    let timeout = AXUIElementSetMessagingTimeout(target.field, 0.1)
+                    guard timeout == .success else { return timeout }
+                    return AXUIElementSetAttributeValue(target.field, kAXValueAttribute as CFString, text as CFString)
+                },
+                clearRetainedField: { self.clearRetainedField(target) },
+                press: {
+                    // Reads above use 20 ms. Restore an action timeout *after*
+                    // validation and immediately before pressing this exact button.
+                    guard AXUIElementSetMessagingTimeout(target.submit, 0.5) == .success else { return .rejected }
+                    return AutoFillPasswordDelivery.classifyPressResult(
+                        AXUIElementPerformAction(target.submit, kAXPressAction as CFString)
+                    )
+                }
+            ))
+        } catch let failure as AutoFillPasswordDelivery.Failure {
+            switch failure {
+            case .targetChanged: throw DeliveryError.targetChanged
+            case .writeFailed: throw DeliveryError.unsupportedField
+            case .submissionFailed: throw DeliveryError.submissionFailed
+            case .cleanupFailed: throw DeliveryError.cleanupFailed
             }
-            throw DeliveryError.targetChanged
         }
-        guard AXUIElementPerformAction(target.submit, kAXPressAction as CFString) == .success else {
-            if isCurrent(target, expectedCharacters: text.utf16.count) {
-                _ = AXUIElementSetAttributeValue(target.field, kAXValueAttribute as CFString, "" as CFString)
-            }
-            throw DeliveryError.submissionFailed
-        }
+    }
+
+    /// Revoking permission to submit must not revoke our ability to erase what
+    /// we just wrote. This checks retained ownership only, never focus, lock state,
+    /// visibility, prompt text, button enablement, or an expected character count.
+    private func ownsRetainedField(_ target: Target) -> Bool {
+        guard !target.application.isTerminated, isTrustedOwner(target.application) else { return false }
+        let pid = target.application.processIdentifier
+        var fieldPID: pid_t = 0
+        var windowPID: pid_t = 0
+        guard AXUIElementGetPid(target.field, &fieldPID) == .success, fieldPID == pid,
+              AXUIElementGetPid(target.window, &windowPID) == .success, windowPID == pid,
+              Self.attribute(target.field, kAXRoleAttribute) as? String == kAXTextFieldRole,
+              Self.attribute(target.field, kAXSubroleAttribute) as? String == kAXSecureTextFieldSubrole,
+              let fieldWindow = Self.attribute(target.field, kAXWindowAttribute), CFEqual(fieldWindow, target.window),
+              let windows = Self.attribute(AXUIElementCreateApplication(pid), kAXWindowsAttribute) as? [AXUIElement]
+        else { return false }
+        return windows.contains { CFEqual($0, target.window) }
+    }
+
+    private func clearRetainedField(_ target: Target) -> Bool {
+        guard ownsRetainedField(target), AXUIElementSetMessagingTimeout(target.field, 0.1) == .success else { return false }
+        _ = AXUIElementSetAttributeValue(target.field, kAXValueAttribute as CFString, "" as CFString)
+        // Even the clear can time out. Confirm absence without reading AXValue.
+        return ownsRetainedField(target) && Self.attribute(target.field, kAXNumberOfCharactersAttribute) as? Int == 0
     }
 
     /// Missing CGSession data is unknown, not an unlocked desktop.

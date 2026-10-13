@@ -75,12 +75,13 @@ final class AutoFillApprovalCoordinator {
     }
 
     private func approve(_ target: AutoFillPromptAdapter.Target, requestID id: UUID) async {
+        var keepsNotice = false
         defer {
             if requestID == id {
                 requestID = nil
                 activeTarget = nil
                 task = nil
-                panel.dismiss()
+                if !keepsNotice { panel.dismiss() }
             }
         }
         guard mayContinue(id), adapter.isCurrent(target) else { return }
@@ -108,10 +109,21 @@ final class AutoFillApprovalCoordinator {
             }.value
             defer { bytes.resetBytes(in: 0..<bytes.count) }
             guard mayContinue(id), adapter.isCurrent(target) else { return }
-            try adapter.submit(bytes, to: target, mayProceed: { self.mayContinue(id) })
+            let outcome = try adapter.submit(bytes, to: target, mayProceed: { self.mayContinue(id) })
             // AXPress success only proves submission. It doesn't prove that the
             // requesting app accepted the credential or completed AutoFill.
-            statusMessage = "Submitted to AutoFill."
+            switch outcome {
+            case .submitted:
+                statusMessage = "Submitted to AutoFill."
+            case .indeterminate:
+                statusMessage = "AutoFill may still be processing. Check the system prompt."
+                keepsNotice = true
+                panel.showNotice(statusMessage, near: target.bounds)
+            }
+        } catch AutoFillPromptAdapter.DeliveryError.cleanupFailed {
+            statusMessage = "Could not confirm the password field was cleared. Clear it or cancel the system prompt."
+            keepsNotice = true
+            panel.showNotice("Clear the password field or cancel the system prompt.", near: target.bounds)
         } catch {
             statusMessage = "AutoFill was not submitted. Use the system prompt."
         }

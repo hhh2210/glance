@@ -7,6 +7,7 @@ trap 'rm -rf "$test_dir"' EXIT
 
 swiftc -O -parse-as-library \
   "$repo_root/glance/AutoFillPromptPolicy.swift" \
+  "$repo_root/glance/AutoFillPasswordDelivery.swift" \
   "$repo_root/glance/AutoFillPromptAdapter.swift" \
   "$repo_root/tools/autofill_adapter_selftest.swift" \
   -o "$test_dir/autofill_adapter_selftest"

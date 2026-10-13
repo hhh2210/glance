@@ -12,7 +12,7 @@ final class AutoFillApprovalPanel {
     private var label: NSTextField?
     private var onCancel: (() -> Void)?
 
-    func show(near bounds: CGRect, cancel: @escaping () -> Void) {
+    func show(near bounds: CGRect, buttonTitle: String = "Cancel", cancel: @escaping () -> Void) {
         dismiss()
         onCancel = cancel
         let size = NSSize(width: 350, height: 100)
@@ -49,7 +49,7 @@ final class AutoFillApprovalPanel {
         label.textColor = .secondaryLabelColor
         label.frame = NSRect(x: 18, y: 15, width: 220, height: 42)
         content.addSubview(label)
-        let button = NSButton(title: "Cancel", target: self, action: #selector(cancelPressed))
+        let button = NSButton(title: buttonTitle, target: self, action: #selector(cancelPressed))
         button.bezelStyle = .rounded
         button.frame = NSRect(x: 255, y: 30, width: 78, height: 32)
         content.addSubview(button)
@@ -59,6 +59,11 @@ final class AutoFillApprovalPanel {
     }
 
     func update(_ message: String) { label?.stringValue = message }
+
+    func showNotice(_ message: String, near bounds: CGRect) {
+        show(near: bounds, buttonTitle: "Dismiss") { [weak self] in self?.dismiss() }
+        update(message)
+    }
 
     func dismiss() {
         panel?.orderOut(nil)

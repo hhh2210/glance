@@ -29,15 +29,25 @@ character-count inspection, focus, or the expected accessibility structure are
 unavailable, the prototype does nothing. A submitted action is not reported as
 successful authentication.
 
+After a failed write or revoked submission eligibility, cleanup checks ownership
+of the retained secure field independently of focus, session state, visibility,
+or prompt text. It confirms a zero character count before reporting cleanup as
+complete. An unconfirmed cleanup shows a dismissible instruction to clear the
+field or cancel the native prompt. An AX action timeout or generic action failure
+is reported as indeterminate: Glance neither clears the field underneath a possibly
+running action nor retries it. The action timeout is set immediately before the
+button press, after all shorter metadata reads.
+
 ## Verification and limits
 
 - The pure policy has 43 passing checks, including wrong owners/users, nonempty
   fields, focus/session changes, multiple secure fields, and unrelated password
   dialogs. English wording comes from an observed screenshot; Chinese fixtures
   are proposed translations, not live system observations.
-- Seven production-adapter checks cover retained control identity, request-text
-  changes, cancellation before delivery, and rejection of a non-Apple process.
-  They use public fixture bytes and never open a window or retrieve a credential.
+- 63 production-adapter/transaction checks cover retained control identity,
+  request-text changes, cancellation, post-write cleanup, AX error classification,
+  and indeterminate submission without cleanup or retry. They use public fixture
+  bytes and never open a window or retrieve a credential.
 - The existing 121 enrollment-state checks remain the lock-screen regression
   suite. Camera recognition and real-password delivery require separate runtime
   verification; these offline tests do not establish those outcomes.
@@ -58,6 +68,17 @@ successful authentication.
 Keep this as an experimental branch until a real AutoFill request proves discovery,
 cancellation, the direct AX write, and the requesting application's completed
 AutoFill behavior. Its accessibility shape can differ from ordinary AppKit fields.
+
+## Local signing prerequisite
+
+The current ad-hoc build cannot initialize its protected credential store: a
+noninteractive public-marker probe returned `errSecMissingEntitlement` (-34018)
+when creating the `.userPresence` session key. A real local attempt also displayed
+“A required entitlement is not present.” A valid development signing identity and
+matching provisioning profile are needed before credential setup can complete.
+Build success, a valid ad-hoc signature, and policy tests do not establish this
+runtime capability. Reusing the upstream bundle ID or settings path does not grant
+access to its team's existing session key or decrypt its enrolled-face store.
 
 ## API evidence
 
