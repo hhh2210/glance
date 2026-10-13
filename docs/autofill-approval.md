@@ -35,6 +35,9 @@ successful authentication.
   fields, focus/session changes, multiple secure fields, and unrelated password
   dialogs. English wording comes from an observed screenshot; Chinese fixtures
   are proposed translations, not live system observations.
+- Seven production-adapter checks cover retained control identity, request-text
+  changes, cancellation before delivery, and rejection of a non-Apple process.
+  They use public fixture bytes and never open a window or retrieve a credential.
 - The existing 121 enrollment-state checks remain the lock-screen regression
   suite. Camera recognition and real-password delivery require separate runtime
   verification; these offline tests do not establish those outcomes.
