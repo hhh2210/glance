@@ -81,6 +81,9 @@ minimum_os="$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$plist
     fail "tag version $expected_version does not match app version $version"
 [[ "$bundle_id" == io.github.hhh2210.glance ]] || fail "unexpected bundle identity: $bundle_id"
 [[ "$minimum_os" == 15.0 ]] || fail "unexpected deployment target: $minimum_os"
+icon_file="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$plist")" || fail 'missing app icon declaration'
+icon_file="${icon_file%.icns}.icns"
+[[ "$icon_file" != */* && -s "$app/Contents/Resources/$icon_file" ]] || fail 'compiled app icon is missing'
 if /usr/libexec/PlistBuddy -c 'Print :SUFeedURL' "$plist" >/dev/null 2>&1; then
     fail 'the fork release must not contain an upstream Sparkle update feed'
 fi
