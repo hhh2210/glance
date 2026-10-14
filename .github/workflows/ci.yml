@@ -25,6 +25,10 @@ jobs:
           persist-credentials: false
       - name: Test enrollment feedback
         run: tools/enrollment_selftest.sh
+      - name: Test AutoFill prompt policy
+        run: tools/autofill_policy_selftest.sh
+      - name: Test AutoFill target binding
+        run: tools/autofill_adapter_selftest.sh
       - name: Build and package both architectures without Developer ID
         run: tools/package-release.sh --output "$RUNNER_TEMP/release" --derived-data "$RUNNER_TEMP/DerivedData"
       - name: Upload verified package
